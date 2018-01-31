@@ -1,0 +1,3 @@
+
+class HttpFetchError(BaseException):
+    pass
