@@ -28,7 +28,6 @@ def post_jobs(jobs, concurrency):
     with ThreadPoolExecutor(max_workers=concurrency) as executor:
         futures = [executor.submit(retry_wrapper, job) for job in jobs]
         wait(futures, timeout=None, return_when=ALL_COMPLETED)
-        print(futures)
 
 
 if __name__ == "__main__":
