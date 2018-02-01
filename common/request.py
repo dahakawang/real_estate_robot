@@ -14,6 +14,6 @@ def get_soup(url):
         # print("requesting {}".format(url))
         request = Request()
         resp = request.get(url)
-        return BeautifulSoup(resp.text, "html.parser")
+        return BeautifulSoup(resp.text, "lxml")
     except Exception as e:
         raise HttpFetchError() from e
