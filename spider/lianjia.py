@@ -1,17 +1,19 @@
-from urllib.parse import urlparse
+from urllib.parse import urlparse, urljoin
 from common.request import get_soup
 from common.threaded_job import post_jobs
+import json
 
 
 class AreaSpider:
-    def __init__(self, base_url, url, name):
+    def __init__(self, base_url, url, part, name):
         self.base_url = base_url
         self.url = url
+        self.part = part
         self.name = name
 
     def start_sync(self):
         total_item, page_links = self._generate_count_and_pages()
-        print("Area: {} total: {}, pages: {}".format(self.name, total_item, len(page_links)))
+        print("Area: {}/{} total: {}, pages: {}".format(self.part, self.name, total_item, len(page_links)))
 
         # TODO deal with all pages
 
@@ -20,19 +22,18 @@ class AreaSpider:
         return self._get_count(html), self._get_pages(html)
 
     def _get_count(self, html):
-        div = html.select("div.search-result > span.result-count")
+        div = html.select("body > div.content > div.leftContent > div.resultDes > h2 > span")
         assert len(div) == 1, "should be only one item count number"
         return int(div[0].text)
 
     def _get_pages(self, html):
-        div = html.select("div.content > div.m-list > div.c-pagination > a")
+        obj = json.loads(html.select("body > div.content div.leftContent div.contentBottom div.page-box div")[0]['page-data'])
 
-        last = None
-        for item in div:
-            if item["gahref"] == "results_totalpage":
-                last = int(item.text)
-        assert last, "last page should exist"
-        return ["{}/d{}".format(self.url, idx + 1) for idx in range(last)]
+        assert 'totalPage' in obj, "should have total page"
+        return [urljoin(self.url, "pg{}".format(idx + 1)) for idx in range(obj['totalPage'])]
+
+    def __repr__(self):
+        return "<Area: {}/{} @ {}>".format(self.part, self.name, self.url)
 
 
 class SpiderLianJia:
@@ -46,35 +47,33 @@ class SpiderLianJia:
         links = self._get_area_links(self.start_url)
         print("done generate area list ({} areas)".format(len(links)))
 
-        jobs = [AreaSpider(self.base_url, url, links[url]) for url in links]
+        jobs = [AreaSpider(self.base_url, url, *links[url]) for url in links]
         post_jobs(jobs, self.concurrency)
 
 
     def _get_area_links(self, start_url):
         all_urls = {}
 
-        level1_urls = self._get_level1_links(start_url)
-        for url in level1_urls:
-            rs = self._get_level2_links(url)
+        level1_url_names = self._get_level1_links(start_url)
+        for url, name in level1_url_names:
+            rs = self._get_level2_links(name, url)
             all_urls.update(rs)
         return all_urls
 
-    def _get_level2_links(self, start_url):
+    def _get_level2_links(self, part, start_url):
         rs = {}
 
         top_level = get_soup(start_url)
-        for second_level in top_level.select("#plateList div.level2 > div.level2-item > a"):
-            if "on" not in second_level["class"]:
-                rs[self.base_url + second_level["href"]] = second_level.text
+        for second_level in top_level.select("body > div.m-filter > div.position > dl > dd > div")[0].select("div")[1].select("a"):
+            rs[self.base_url + second_level["href"]] = (part, second_level.text)
         return rs
 
     def _get_level1_links(self, start_url):
         rs = []
 
         top_level = get_soup(start_url)
-        for second_level in top_level.select("#plateList div.level1 > a.level1-item"):
-            if "on" not in second_level["class"]:
-                rs.append(self.base_url + second_level["href"])
+        for second_level in top_level.select("body > div.m-filter > div.position > dl > dd > div")[0].select("div > a"):
+            rs.append((self.base_url + second_level["href"], second_level.text))
         return rs
 
 
