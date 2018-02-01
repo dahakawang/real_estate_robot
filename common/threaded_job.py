@@ -13,7 +13,7 @@ def retry_wrapper(job):
         except HttpFetchError as e:
             error_str = "failed to fetch http data"
         except:
-            print("unknown exception throwed:\n", traceback.format_exc(), file=sys.stderr)
+            print("unknown exception throwed for {}:\n{}".format(job, traceback.format_exc()), file=sys.stderr)
             raise
 
         if retry != TOTAL_RETRY - 1:
