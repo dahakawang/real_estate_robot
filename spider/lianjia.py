@@ -1,6 +1,7 @@
 from urllib.parse import urlparse, urljoin
 from common.request import get_soup
 from common.threaded_job import post_jobs
+from common.mongo_client import *
 import json
 import re
 
@@ -16,7 +17,7 @@ class ItemSpider:
         print(obj)
 
     def __repr__(self):
-        return "<Item: {}>".format(self.url)
+        return "<Item: {}/{} {}>".format(self.part, self.area, self.url)
 
     def _get_down_payment(self, html):
         down_payment_str = html.select("body > div.overview > div.content > div.price > div.text > div.tax > span.taxtext > span")[0].text
@@ -96,7 +97,6 @@ class PageSpider:
         return "<Area: {}/{} @ {}>".format(self.part, self.name, self.url)
 
 
-
 class AreaSpider:
     def __init__(self, cfg, base_url, url, part, name):
         self.cfg = cfg
@@ -108,10 +108,11 @@ class AreaSpider:
 
     def start_sync(self):
         total_item, page_links = self._generate_count_and_pages()
-        print("{} total: {}, pages: {}".format(self, total_item, len(page_links)))
 
         jobs = [PageSpider(self.cfg, self.base_url, url, self.part, self.name) for url in page_links]
         success, failure, result = post_jobs(jobs, self.concurrency)
+
+        print("{} total: {}, actual: {}, pages: {}".format(self, total_item, len(result), len(page_links)))
         return result
 
     def _generate_count_and_pages(self):
@@ -134,23 +135,45 @@ class AreaSpider:
 
 
 class SpiderLianJia:
-    def __init__(self, cfg):
+    def __init__(self, cfg, mongo):
         self.cfg = cfg
+        self.db = mongo["data"]
         self.start_url = cfg["base_url"]
         self.concurrency = cfg["concurrency"]["area"]
         parsed = urlparse(self.start_url)
         self.base_url = f"{parsed.scheme}://{parsed.netloc}"
 
     def start_sync(self):
+        links = self.get_link_list()
+        #TODO download all links
+        print(links)
+
+    def get_link_list(self):
+        links = self._try_get_cached_links()
+        if not links:
+            links = self._download_link_list()
+            self._cache_links(links)
+        return links
+
+    def _try_get_cached_links(self):
+        cached_links = [ItemSpider(item["url"], item["part"], item["area"]) for item in self.db["tmp_lianjia_links_"].find()]
+        print("try get {} cached links".format(len(cached_links)))
+        return cached_links
+
+
+    def _cache_links(self, links):
+        links = [{"url": l.url, "part": l.part, "area": l.area} for l in links]
+        print("caching {} item links".format(len(links)))
+        self.db["tmp_lianjia_links_"].drop()
+        self.db["tmp_lianjia_links_"].insert_many(links)
+
+
+    def _download_link_list(self):
         links = self._get_area_links(self.start_url)
         print("done generate area list ({} areas)".format(len(links)))
-
         jobs = [AreaSpider(self.cfg, self.base_url, url, *links[url]) for url in links]
         _, _, result = post_jobs(jobs, self.concurrency)
-
-        print(result)
-        print(len(result))
-
+        return result
 
     def _get_area_links(self, start_url):
         all_urls = {}
@@ -179,9 +202,10 @@ class SpiderLianJia:
 
 
 if __name__ == "__main__":
-    cfg = {"base_url": "http://sh.lianjia.com/ershoufang", "concurrency": {"area": 1, "page": 1, "item": 1}}
+    cfg = {"mongo": {"url": "davidnas.local"}, "base_url": "http://sh.lianjia.com/ershoufang", "concurrency": {"area": 1, "page": 200, "item": 1}}
 
-    spider = SpiderLianJia(cfg)
+    mongo = Mongo.get_client(cfg)
+    spider = SpiderLianJia(cfg, mongo)
     spider.start_sync()
     # item = ItemSpider("https://sh.lianjia.com/ershoufang/107001104881.html", "", "")
     # item.start_sync()
