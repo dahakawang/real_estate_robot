@@ -2,10 +2,105 @@ from urllib.parse import urlparse, urljoin
 from common.request import get_soup
 from common.threaded_job import post_jobs
 import json
+import re
+
+
+class ItemSpider:
+    def __init__(self, url, part, area):
+        self.url = url
+        self.part = part
+        self.area = area
+
+    def start_sync(self):
+        obj = self._extract()
+        print(obj)
+
+    def __repr__(self):
+        return "<Item: {}>".format(self.url)
+
+    def _get_down_payment(self, html):
+        down_payment_str = html.select("body > div.overview > div.content > div.price > div.text > div.tax > span.taxtext > span")[0].text
+        m = re.match("首付(\d+)万", down_payment_str.strip())
+        return float(m.group(1)) * 1e4
+
+    def _get_per_m2(self, html):
+        rmb = html.select("body > div.overview > div.content > div.price > div.text > div.unitPrice > span")[0].text
+        m = re.match("(\d+)元/平米", rmb)
+        return float(m.group(1))
+
+    def _get_area(self, area):
+        m = re.match("([\d\.]+)㎡", area)
+        return float(m.group(1))
+
+    def _construct_date(self, html):
+        desc = html.select("body > div.overview > div.content > div.houseInfo > div.area > div.subInfo")[0].text
+        m = re.match("(\d+)年建/\w+", desc)
+        return float(m.group(1))
+
+    def _extract(self):
+        html = get_soup(self.url)
+
+        obj = {}
+        obj["identity"] = self.url
+
+        # money
+        obj["finance"] = {}
+        obj["finance"]["total"] = float(html.select("body > div.overview > div.content > div.price > span.total")[0].text) * 1e4
+        obj["finance"]["down_payment"] = self._get_down_payment(html)
+        obj["finance"]["tax"] = float(html.select("#PanelTax")[0].text) * 1e4
+        obj["finance"]["per_m2"] = self._get_per_m2(html)
+
+        #location
+        obj["location"] = {}
+        obj["location"]["name"] = html.select("body > div.overview > div.content > div.aroundInfo > div.communityName > a.info")[0].text
+        obj["location"]["partition"] = self.part
+        obj["location"]["area"] = self.area
+        obj["location"]["supplement"] = [a.text for a in html.select("body > div.overview > div.content > div.aroundInfo > div.areaName > a")]
+
+
+        # property
+        obj["property"] = {}
+        prop = {li.select('span')[0].text: li.find(text=True, recursive=False) for li in html.select("#introduction > div > div > div.base > div.content > ul > li")}
+        obj["property"]["formation"] = prop["房屋户型"]
+        obj["property"]["floor"] = prop["所在楼层"]
+        obj["property"]["total_area"] = self._get_area(prop["建筑面积"])
+        obj["property"]["construct_type"] = prop["建筑类型"]
+        obj["property"]["structure"] = prop["建筑结构"]
+        obj["property"]["orientation"] = prop["房屋朝向"]
+        obj["property"]["construct_date"] = self._construct_date(html)
+
+        return obj
+
+
+class PageSpider:
+    def __init__(self, cfg, base_url, url, part, name):
+        self.cfg = cfg
+        self.concurrency = cfg["concurrency"]["item"]
+        self.base_url = base_url
+        self.url = url
+        self.part = part
+        self.name = name
+
+    def start_sync(self):
+        links = self._get_links()
+
+        jobs = [ItemSpider(link, self.part, self.name) for link in links]
+        return jobs
+
+    def _get_links(self):
+        html = get_soup(self.url)
+        divs = html.select("body > div.content > div.leftContent > ul > li > div.info.clear > div.title > a")
+        return [div["href"] for div in divs]
+
+    def __repr__(self):
+        return "<Area: {}/{} @ {}>".format(self.part, self.name, self.url)
+
 
 
 class AreaSpider:
-    def __init__(self, base_url, url, part, name):
+    def __init__(self, cfg, base_url, url, part, name):
+        self.cfg = cfg
+        self.concurrency = cfg["concurrency"]["page"]
         self.base_url = base_url
         self.url = url
         self.part = part
@@ -13,9 +108,11 @@ class AreaSpider:
 
     def start_sync(self):
         total_item, page_links = self._generate_count_and_pages()
-        print("Area: {}/{} total: {}, pages: {}".format(self.part, self.name, total_item, len(page_links)))
+        print("{} total: {}, pages: {}".format(self, total_item, len(page_links)))
 
-        # TODO deal with all pages
+        jobs = [PageSpider(self.cfg, self.base_url, url, self.part, self.name) for url in page_links]
+        success, failure, result = post_jobs(jobs, self.concurrency)
+        return result
 
     def _generate_count_and_pages(self):
         html = get_soup(self.url)
@@ -38,6 +135,7 @@ class AreaSpider:
 
 class SpiderLianJia:
     def __init__(self, cfg):
+        self.cfg = cfg
         self.start_url = cfg["base_url"]
         self.concurrency = cfg["concurrency"]["area"]
         parsed = urlparse(self.start_url)
@@ -47,8 +145,11 @@ class SpiderLianJia:
         links = self._get_area_links(self.start_url)
         print("done generate area list ({} areas)".format(len(links)))
 
-        jobs = [AreaSpider(self.base_url, url, *links[url]) for url in links]
-        post_jobs(jobs, self.concurrency)
+        jobs = [AreaSpider(self.cfg, self.base_url, url, *links[url]) for url in links]
+        _, _, result = post_jobs(jobs, self.concurrency)
+
+        print(result)
+        print(len(result))
 
 
     def _get_area_links(self, start_url):
@@ -78,8 +179,10 @@ class SpiderLianJia:
 
 
 if __name__ == "__main__":
-    cfg = {"base_url": "http://sh.lianjia.com/ershoufang", "concurrency": {"area": 1, "page": 1}}
+    cfg = {"base_url": "http://sh.lianjia.com/ershoufang", "concurrency": {"area": 1, "page": 1, "item": 1}}
 
     spider = SpiderLianJia(cfg)
     spider.start_sync()
+    # item = ItemSpider("https://sh.lianjia.com/ershoufang/107001104881.html", "", "")
+    # item.start_sync()
 
