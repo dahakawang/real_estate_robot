@@ -22,12 +22,16 @@ def retry_wrapper(job):
             time.sleep(wait_sec)
         else:
             print("{} for {}, tried {} times, exiting...".format(error_str, job, 1 + retry), file=sys.stderr)
+    raise MaxExceptionError()
 
 
 def post_jobs(jobs, concurrency):
     with ThreadPoolExecutor(max_workers=concurrency) as executor:
         futures = [executor.submit(retry_wrapper, job) for job in jobs]
         wait(futures, timeout=None, return_when=ALL_COMPLETED)
+        return len([1 for f in futures if not f.exception()]),\
+               len([1 for f in futures if f.exception()]),\
+               [r for job in futures if not job.exception() for r in job.result()]
 
 
 if __name__ == "__main__":
@@ -39,7 +43,10 @@ if __name__ == "__main__":
             return "Job"
 
         def start_sync(self):
-            raise self.exception
+            if self.exception:
+                raise self.exception
+            return [1]
 
-    post_jobs([Job(RuntimeError("let's just play"))], 10)
+    r = post_jobs([Job(RuntimeError("let's just play")), Job(RuntimeError()), Job(None), Job(None)], 10)
+    print(r)
     # post_jobs([Job(HttpFetchError())], 10)
