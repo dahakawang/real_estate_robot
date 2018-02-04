@@ -170,7 +170,7 @@ class SpiderLianJia:
         return links
 
     def _try_get_cached_links(self):
-        cached_links = [ItemSpider(self.cfg, item["url"], item["part"], item["area"]) for item in self.db["tmp_lianjia_links_"].find()]
+        cached_links = [ItemSpider(self.cfg, item["url"], item["part"], item["area"]) for item in self.db["cached_lianjia_links_"].find()]
         print("try get {} cached links".format(len(cached_links)))
         return cached_links
 
