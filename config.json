@@ -1,0 +1,7 @@
+{
+    "mongo": {
+        "url": "davidnas.local"
+    },
+    "base_url": "http://sh.lianjia.com/ershoufang",
+    "concurrency": {"area": 1, "page": 200, "item": 500}
+}
