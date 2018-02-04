@@ -5,6 +5,8 @@ from common.mongo_client import *
 import datetime
 import json
 import re
+import sys
+import os
 from collections import defaultdict
 
 
@@ -214,9 +216,18 @@ class SpiderLianJia:
 
 
 if __name__ == "__main__":
-    cfg = {"ts": datetime.datetime.utcnow(), "mongo": {"url": "davidnas.local"}, "base_url": "http://sh.lianjia.com/ershoufang", "concurrency": {"area": 1, "page": 200, "item": 500}}
-    Mongo.setup_client(cfg)
+    if len(sys.argv) > 1 and os.path.isfile(sys.argv[1]):
+        cfg_file = sys.argv[1]
+    else:
+        cfg_file = "config.json"
 
-    spider = SpiderLianJia(cfg)
-    spider.start_sync()
+    with open(cfg_file, "r") as file:
+        cfg = json.load(file)
+
+        cfg["ts"] = datetime.datetime.utcnow()
+        Mongo.setup_client(cfg)
+
+        print("config file content: {}".format(cfg))
+        spider = SpiderLianJia(cfg)
+        spider.start_sync()
 
