@@ -2,5 +2,6 @@ import pymongo
 
 class Mongo:
     @staticmethod
-    def get_client(cfg):
-        return pymongo.MongoClient(cfg["mongo"]["url"])
+    def setup_client(cfg):
+        client = pymongo.MongoClient(cfg["mongo"]["url"])
+        cfg["mongo"] = client
