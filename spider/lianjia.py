@@ -2,6 +2,7 @@ from urllib.parse import urlparse, urljoin
 from common.request import get_soup
 from common.threaded_job import post_jobs
 from common.mongo_client import *
+from common.errors import *
 import datetime
 import json
 import re
@@ -19,6 +20,7 @@ class ItemSpider:
     def start_sync(self):
         obj = self._extract()
         self.save_to_mongo(obj)
+        return [True]
 
     def save_to_mongo(self, obj):
         obj["inserted"] = cfg["ts"]
@@ -132,7 +134,10 @@ class AreaSpider:
     def _get_count(self, html):
         div = html.select("body > div.content > div.leftContent > div.resultDes > h2 > span")
         assert len(div) == 1, "should be only one item count number"
-        return int(div[0].text)
+        count = int(div[0].text)
+        if count == 0:
+            raise KnownError("the page doesn't have any data")
+        return count
 
     def _get_pages(self, html):
         obj = json.loads(html.select("body > div.content div.leftContent div.contentBottom div.page-box div")[0]['page-data'])
