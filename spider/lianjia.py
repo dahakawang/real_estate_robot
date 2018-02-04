@@ -2,19 +2,26 @@ from urllib.parse import urlparse, urljoin
 from common.request import get_soup
 from common.threaded_job import post_jobs
 from common.mongo_client import *
+import datetime
 import json
 import re
+from collections import defaultdict
 
 
 class ItemSpider:
-    def __init__(self, url, part, area):
+    def __init__(self, cfg, url, part, area):
         self.url = url
         self.part = part
         self.area = area
 
     def start_sync(self):
         obj = self._extract()
-        print(obj)
+        self.save_to_mongo(obj)
+
+    def save_to_mongo(self, obj):
+        obj["inserted"] = cfg["ts"]
+        col = cfg["mongo"]["data"]["raw_lianjia"]
+        col.insert_one(obj)
 
     def __repr__(self):
         return "<Item: {}/{} {}>".format(self.part, self.area, self.url)
@@ -31,12 +38,12 @@ class ItemSpider:
 
     def _get_area(self, area):
         m = re.match("([\d\.]+)㎡", area)
-        return float(m.group(1))
+        return float(m.group(1)) if m else None
 
     def _construct_date(self, html):
         desc = html.select("body > div.overview > div.content > div.houseInfo > div.area > div.subInfo")[0].text
         m = re.match("(\d+)年建/\w+", desc)
-        return float(m.group(1))
+        return float(m.group(1)) if m else None
 
     def _extract(self):
         html = get_soup(self.url)
@@ -61,7 +68,8 @@ class ItemSpider:
 
         # property
         obj["property"] = {}
-        prop = {li.select('span')[0].text: li.find(text=True, recursive=False) for li in html.select("#introduction > div > div > div.base > div.content > ul > li")}
+        prop = defaultdict(lambda: None)
+        prop.update({li.select('span')[0].text: li.find(text=True, recursive=False) for li in html.select("#introduction > div > div > div.base > div.content > ul > li")})
         obj["property"]["formation"] = prop["房屋户型"]
         obj["property"]["floor"] = prop["所在楼层"]
         obj["property"]["total_area"] = self._get_area(prop["建筑面积"])
@@ -85,7 +93,7 @@ class PageSpider:
     def start_sync(self):
         links = self._get_links()
 
-        jobs = [ItemSpider(link, self.part, self.name) for link in links]
+        jobs = [ItemSpider(self.cfg, link, self.part, self.name) for link in links]
         return jobs
 
     def _get_links(self):
@@ -135,9 +143,10 @@ class AreaSpider:
 
 
 class SpiderLianJia:
-    def __init__(self, cfg, mongo):
+    def __init__(self, cfg):
         self.cfg = cfg
-        self.db = mongo["data"]
+        self.client = cfg["mongo"]
+        self.db = cfg["mongo"]["data"]
         self.start_url = cfg["base_url"]
         self.concurrency = cfg["concurrency"]["area"]
         parsed = urlparse(self.start_url)
@@ -145,8 +154,11 @@ class SpiderLianJia:
 
     def start_sync(self):
         links = self.get_link_list()
-        #TODO download all links
-        print(links)
+        self.download_all(links)
+
+    def download_all(self, links):
+        concurrency = cfg["concurrency"]["page"]
+        post_jobs(links, concurrency)
 
     def get_link_list(self):
         links = self._try_get_cached_links()
@@ -156,7 +168,7 @@ class SpiderLianJia:
         return links
 
     def _try_get_cached_links(self):
-        cached_links = [ItemSpider(item["url"], item["part"], item["area"]) for item in self.db["tmp_lianjia_links_"].find()]
+        cached_links = [ItemSpider(self.cfg, item["url"], item["part"], item["area"]) for item in self.db["tmp_lianjia_links_"].find()]
         print("try get {} cached links".format(len(cached_links)))
         return cached_links
 
@@ -202,11 +214,9 @@ class SpiderLianJia:
 
 
 if __name__ == "__main__":
-    cfg = {"mongo": {"url": "davidnas.local"}, "base_url": "http://sh.lianjia.com/ershoufang", "concurrency": {"area": 1, "page": 200, "item": 1}}
+    cfg = {"ts": datetime.datetime.utcnow(), "mongo": {"url": "davidnas.local"}, "base_url": "http://sh.lianjia.com/ershoufang", "concurrency": {"area": 1, "page": 200, "item": 500}}
+    Mongo.setup_client(cfg)
 
-    mongo = Mongo.get_client(cfg)
-    spider = SpiderLianJia(cfg, mongo)
+    spider = SpiderLianJia(cfg)
     spider.start_sync()
-    # item = ItemSpider("https://sh.lianjia.com/ershoufang/107001104881.html", "", "")
-    # item.start_sync()
 
