@@ -207,7 +207,7 @@ class SpiderLianJia:
         rs = {}
 
         top_level = get_soup(start_url)
-        for second_level in top_level.select("body > div.m-filter > div.position > dl > dd > div")[0].select("div")[1].select("a"):
+        for second_level in top_level.select("body div.m-filter div.position > dl > dd > div")[0].select("div")[1].select("a"):
             rs[self.base_url + second_level["href"]] = (part, second_level.text)
         return rs
 
@@ -215,7 +215,7 @@ class SpiderLianJia:
         rs = []
 
         top_level = get_soup(start_url)
-        for second_level in top_level.select("body > div.m-filter > div.position > dl > dd > div")[0].select("div > a"):
+        for second_level in top_level.select("body div.m-filter div.position > dl > dd > div")[0].select("div > a"):
             rs.append((self.base_url + second_level["href"], second_level.text))
         return rs
 
