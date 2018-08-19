@@ -7,12 +7,14 @@ import time
 
 def retry_wrapper(job):
     TOTAL_RETRY = 10
+    print("start downloading", job)
     for retry in range(TOTAL_RETRY):
         try:
-            return job.start_sync()
+            result = job.start_sync()
+            print("end downloading", job)
+            return result
         except HttpFetchError as e:
             error_str = "failed to fetch http data"
-            trace_str = traceback.format_exc()
         except KnownError as e:
             print("known exception throwed for {}: {}".format(job, e), file=sys.stderr)
             raise
@@ -22,10 +24,10 @@ def retry_wrapper(job):
 
         if retry != TOTAL_RETRY - 1:
             wait_sec = 10 * (retry + 1)
-            print("{} for {}, retrying after {}s... (retried {} times)\n{}".format(error_str, job, wait_sec, retry, trace_str), file=sys.stderr)
+            print("{} for {}, retrying after {}s... (retried {} times)".format(error_str, job, wait_sec, retry), file=sys.stderr)
             time.sleep(wait_sec)
         else:
-            print("{} for {}, tried {} times, exiting...\n{}".format(error_str, job, 1 + retry, trace_str), file=sys.stderr)
+            print("{} for {}, tried {} times, exiting...".format(error_str, job, 1 + retry), file=sys.stderr)
     raise MaxExceptionError()
 
 
