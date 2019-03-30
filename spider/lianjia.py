@@ -30,11 +30,6 @@ class ItemSpider:
     def __repr__(self):
         return "<Item: {}/{} {}>".format(self.part, self.area, self.url)
 
-    def _get_down_payment(self, html):
-        down_payment_str = html.select("body > div.overview > div.content > div.price > div.text > div.tax > span.taxtext > span")[0].text
-        m = re.match("首付(\d+)万", down_payment_str.strip())
-        return float(m.group(1)) * 1e4
-
     def _get_per_m2(self, html):
         rmb = html.select("body > div.overview > div.content > div.price > div.text > div.unitPrice > span")[0].text
         m = re.match("(\d+)元/平米", rmb)
@@ -58,8 +53,8 @@ class ItemSpider:
         # money
         obj["finance"] = {}
         obj["finance"]["total"] = float(html.select("body > div.overview > div.content > div.price > span.total")[0].text) * 1e4
-        obj["finance"]["down_payment"] = self._get_down_payment(html)
-        obj["finance"]["tax"] = float(html.select("#PanelTax")[0].text) * 1e4
+        obj["finance"]["down_payment"] = float('nan')
+        obj["finance"]["tax"] = float('nan')
         obj["finance"]["per_m2"] = self._get_per_m2(html)
 
         #location
@@ -236,3 +231,5 @@ if __name__ == "__main__":
         spider = SpiderLianJia(cfg)
         spider.start_sync()
 
+        # item = ItemSpider(cfg, "https://sh.lianjia.com/ershoufang/107101026757.html", "part", "area")
+        # print(item._extract())

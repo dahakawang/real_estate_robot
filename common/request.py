@@ -6,7 +6,8 @@ from common.errors import *
 #TODO support proxy
 class Request:
     def get(self, url):
-        return requests.get(url)
+        headers = {"User-Agent": "curl/7.54.0"}
+        return requests.get(url, headers=headers)
 
 
 def get_soup(url):
